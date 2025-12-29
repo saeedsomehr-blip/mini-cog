@@ -1,0 +1,18 @@
+mini_cog_app/
+  app/
+    __init__.py
+    main.py
+    bootstrap.py
+    config.py
+    paths.py
+    logging_conf.py
+  ui/
+    __init__.py
+    main_window.py
+    router.py
+    theme.py
+    i18n.py
+    screens/
+      __init__.py
+      base_screen.py
+      home_screen.py
