@@ -13,6 +13,11 @@ def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def local_now_iso() -> str:
+    # Return local time as ISO-8601 string
+    return datetime.now().isoformat(timespec="seconds")
+
+
 @dataclass
 class StepResult:
     # Generic container for a step's recorded data and scores
@@ -40,6 +45,13 @@ class Session:
     session_id: str = field(default_factory=lambda: str(uuid4()))
     created_at: str = field(default_factory=utc_now_iso)
     language: str = "fa"
+
+    # Patient/admin data captured at registration
+    patient_name: str = ""
+    patient_age: Optional[int] = None
+    registration_time: Optional[str] = None
+    word_list_version: Optional[str] = None
+    words_presented: list[str] = field(default_factory=list)
 
     # Chosen word list for this session (set during registration)
     word_list_id: Optional[str] = None

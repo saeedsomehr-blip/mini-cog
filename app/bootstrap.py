@@ -4,16 +4,20 @@ from app.config import AppConfig, load_config
 from app.controller import AppController
 from app.logging_conf import configure_logging
 from app.paths import AppPaths
+from services.instructions.service import InstructionService
+from services.stt.whisper_service import WhisperService, build_whisper_service
 from ui.theme import UIThemeManager
 
 
-@dataclass(frozen=True)
+@dataclass
 class AppContext:
     # Core app services that should be accessible across the app
     config: AppConfig
     paths: AppPaths
     ui: UIThemeManager
     controller: AppController
+    instructions: InstructionService
+    stt: WhisperService
 
 
 def bootstrap_app() -> AppContext:
@@ -31,4 +35,29 @@ def bootstrap_app() -> AppContext:
     # Create controller (central state/flow manager)
     controller = AppController()
 
-    return AppContext(config=config, paths=paths, ui=ui, controller=controller)
+    # Create instruction service (audio + avatar sync)
+    instructions = InstructionService(paths=paths, language=config.language)
+
+    # Preload STT model at startup (offline-only)
+    stt = build_whisper_service(
+        language=config.language,
+        download_root=paths.cache_dir / "whisper",
+        local_files_only=True,
+    )
+    try:
+        stt.preload()
+    except RuntimeError as exc:
+        # Allow app to start even if the offline model cache is missing.
+        # Transcription will surface a clear error message later.
+        import logging
+
+        logging.getLogger(__name__).warning("STT preload failed: %s", exc)
+
+    return AppContext(
+        config=config,
+        paths=paths,
+        ui=ui,
+        controller=controller,
+        instructions=instructions,
+        stt=stt,
+    )

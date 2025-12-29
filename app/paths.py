@@ -38,6 +38,8 @@ class AppPaths:
         exports_dir = base / "exports"
 
         assets_dir = root / "assets"
+        if not assets_dir.exists():
+            assets_dir = root / "asset"
         return AppPaths(
             app_name=app_name,
             project_root=root,

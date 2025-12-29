@@ -1,0 +1,13 @@
+{
+  "fa": {
+    "clock.instruction": "audio/fa/clock_instruction.wav",
+    "registration.intro": "audio/fa/reg-instruction.wav",
+    "registration.version.1": "audio/fa/ورژن 1.wav",
+    "registration.version.2": "audio/fa/ورژن 2.wav",
+    "registration.version.3": "audio/fa/ورژن 3.wav",
+    "registration.version.4": "audio/fa/ورژن 4.wav",
+    "registration.version.5": "audio/fa/ورژن 5.wav",
+    "registration.version.6": "audio/fa/ورژن 6.wav",
+    "recall.prompt": "audio/fa/recall_prompt.wav"
+  }
+}
