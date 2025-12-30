@@ -5,7 +5,8 @@ from app.controller import AppController
 from app.logging_conf import configure_logging
 from app.paths import AppPaths
 from services.instructions.service import InstructionService
-from services.stt.whisper_service import WhisperService, build_whisper_service
+from services.stt.base import STTService
+from services.stt.service_factory import build_stt_service
 from ui.theme import UIThemeManager
 
 
@@ -17,7 +18,7 @@ class AppContext:
     ui: UIThemeManager
     controller: AppController
     instructions: InstructionService
-    stt: WhisperService
+    stt: STTService
 
 
 def bootstrap_app() -> AppContext:
@@ -39,14 +40,14 @@ def bootstrap_app() -> AppContext:
     instructions = InstructionService(paths=paths, language=config.language)
 
     # Preload STT model at startup (offline-only)
-    stt = build_whisper_service(
+    stt = build_stt_service(
         language=config.language,
-        download_root=paths.cache_dir / "whisper",
+        cache_root=paths.cache_dir,
         local_files_only=True,
     )
     try:
         stt.preload()
-    except RuntimeError as exc:
+    except Exception as exc:
         # Allow app to start even if the offline model cache is missing.
         # Transcription will surface a clear error message later.
         import logging

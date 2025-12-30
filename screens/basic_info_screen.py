@@ -31,12 +31,14 @@ class BasicInfoScreen(BaseScreen):
         self.title = QLabel("")
         self.title.setAlignment(Qt.AlignCenter)
         header.addWidget(self.title)
+        self.title.setVisible(False)
 
         self.info = QLabel("")
         self.info.setWordWrap(True)
         self.info.setObjectName("muted")
         self.info.setAlignment(Qt.AlignCenter)
         header.addWidget(self.info)
+        self.info.setVisible(False)
 
         card = QGroupBox()
         card_layout = QVBoxLayout(card)
@@ -103,8 +105,16 @@ class BasicInfoScreen(BaseScreen):
             else "Enter patient details before starting the Mini-Cog steps."
         )
 
-        self.name_input.setPlaceholderText("نام بیمار" if fa else "Patient name")
-        self.age_input.setPlaceholderText("سال" if fa else "Years")
+        if fa:
+            self.name_input.setPlaceholderText("\u200fنام بیمار")
+            self.age_input.setPlaceholderText("\u200fسال")
+            self.name_input.setLayoutDirection(Qt.RightToLeft)
+            self.age_input.setLayoutDirection(Qt.RightToLeft)
+        else:
+            self.name_input.setPlaceholderText("Patient name")
+            self.age_input.setPlaceholderText("Years")
+            self.name_input.setLayoutDirection(Qt.LeftToRight)
+            self.age_input.setLayoutDirection(Qt.LeftToRight)
 
         self.name_label.setText("نام:" if fa else "Name:")
         self.age_label.setText("سن:" if fa else "Age:")
@@ -113,26 +123,18 @@ class BasicInfoScreen(BaseScreen):
         self.name_label.setAlignment(label_align)
         self.age_label.setAlignment(label_align)
         self.date_label.setAlignment(label_align)
-        self._card.setLayoutDirection(Qt.LeftToRight)
+        self._card.setLayoutDirection(Qt.RightToLeft if fa else Qt.LeftToRight)
 
-        input_align = Qt.AlignRight | Qt.AlignVCenter if fa else Qt.AlignLeft | Qt.AlignVCenter
+        input_align = Qt.AlignLeading | Qt.AlignVCenter
+        self.datetime_label.setAlignment(input_align)
         self.name_input.setAlignment(input_align)
         self.age_input.setAlignment(input_align)
-        self.datetime_label.setAlignment(input_align)
-
-        input_direction = Qt.RightToLeft if fa else Qt.LeftToRight
-        self.name_input.setLayoutDirection(input_direction)
-        self.age_input.setLayoutDirection(input_direction)
-        if fa:
-            self.name_input.setStyleSheet("QLineEdit { qproperty-alignment: AlignRight; }")
-            self.age_input.setStyleSheet("QLineEdit { qproperty-alignment: AlignRight; }")
-        else:
-            self.name_input.setStyleSheet("")
-            self.age_input.setStyleSheet("")
+        self.name_input.setStyleSheet("")
+        self.age_input.setStyleSheet("")
 
         if fa:
-            self._field_col = 0
-            self._label_col = 1
+            self._field_col = 1
+            self._label_col = 0
         else:
             self._field_col = 1
             self._label_col = 0
@@ -146,7 +148,13 @@ class BasicInfoScreen(BaseScreen):
 
         self.btn_continue.setText("ادامه" if fa else "Continue")
         self.btn_back.setText("بازگشت به خانه" if fa else "Back to Home")
-        self.set_instruction_status_text(self.info.text())
+        heading = "اطلاعات پایه" if fa else "Basic Info"
+        header_html = (
+            f"<div style='font-size:20px; font-weight:600; text-align:center;'>{heading}</div>"
+        )
+        body_html = f"<div style='margin-top:6px; text-align:center;'>{self.info.text()}"
+        body_html += "</div>"
+        self.set_instruction_status_text(header_html + body_html)
 
     def _position_row(self, row: int, label: QLabel, field: QLineEdit) -> None:
         try:

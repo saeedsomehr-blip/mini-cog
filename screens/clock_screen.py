@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QTimer, QEvent, Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QVBoxLayout, QLabel, QPushButton, QHBoxLayout, QWidget
 
@@ -29,26 +29,46 @@ class ClockScreen(BaseScreen):
         header_layout = QHBoxLayout(self.header_widget)
         header_layout.setContentsMargins(0, 0, 0, 0)
 
+        left_widget = QWidget(self)
+        left_layout = QHBoxLayout(left_widget)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.btn_back = QPushButton("Back")
+        self.btn_back.clicked.connect(lambda: self.router.go("registration"))
+        left_layout.addWidget(self.btn_back)
+
         self.title_label = QLabel("Clock Drawing (Step 2)")
         self.title_label.setFont(QFont("Segoe UI", 18, QFont.Bold))
         header_layout.addWidget(self.title_label)
-        header_layout.addStretch(1)
+        self.title_label.setVisible(False)
 
         self.timer_label = QLabel("03:00")
         self.timer_label.setFont(QFont("Segoe UI", 14))
-        header_layout.addWidget(self.timer_label)
+        self.timer_label.setAlignment(Qt.AlignCenter)
+
+        controls_widget = QWidget(self)
+        controls_layout = QHBoxLayout(controls_widget)
+        controls_layout.setContentsMargins(0, 0, 0, 0)
 
         self.btn_undo = QPushButton("Undo")
         self.btn_undo.clicked.connect(self.canvas.undo_last)
-        header_layout.addWidget(self.btn_undo)
+        controls_layout.addWidget(self.btn_undo)
 
         self.btn_erase = QPushButton("Erase")
         self.btn_erase.clicked.connect(self._toggle_erase)
-        header_layout.addWidget(self.btn_erase)
+        controls_layout.addWidget(self.btn_erase)
 
         self.btn_next = QPushButton("Next")
         self.btn_next.clicked.connect(self._go_next)
-        header_layout.addWidget(self.btn_next)
+        controls_layout.addWidget(self.btn_next)
+
+        header_layout.addWidget(left_widget)
+        header_layout.addStretch(1)
+        header_layout.addWidget(self.timer_label)
+        header_layout.addStretch(1)
+        header_layout.addWidget(controls_widget)
+        self._left_header = left_widget
+        self._right_header = controls_widget
 
         layout.addWidget(self.header_widget)
 
@@ -59,32 +79,16 @@ class ClockScreen(BaseScreen):
         self.result_label.setFont(QFont("Segoe UI", 14))
         layout.addWidget(self.result_label)
 
-        self.btn_row_widget = QWidget(self)
-        btn_row = QHBoxLayout(self.btn_row_widget)
-        btn_row.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.btn_row_widget)
-
-        self.btn_eval = QPushButton("Evaluate")
-        self.btn_eval.clicked.connect(self._evaluate)
-        btn_row.addWidget(self.btn_eval)
-
-        self.btn_clear = QPushButton("Clear")
-        self.btn_clear.clicked.connect(self._clear)
-        btn_row.addWidget(self.btn_clear)
-
-        self.btn_back = QPushButton("Back")
-        self.btn_back.clicked.connect(lambda: self.router.go("registration"))
-        btn_row.addWidget(self.btn_back)
-
-        btn_row.addStretch(1)
-
         self._apply_language_texts()
+        self._install_timer_start_filters()
 
         self._timer = QTimer(self)
         self._timer.setInterval(1000)
         self._timer.timeout.connect(self._on_timer_tick)
         self._time_left = 0
+        self._timer_started = False
         self._waiting_instruction = False
+        self.canvas.installEventFilter(self)
 
         self.ctx.instructions.finished.connect(self._on_instruction_finished)
         self.ctx.instructions.error.connect(self._on_instruction_error)
@@ -107,8 +111,8 @@ class ClockScreen(BaseScreen):
         self.btn_erase.setText(self.tr("پاک‌کن", "Erase"))
         self.btn_undo.setEnabled(True)
         self._apply_language_texts()
-        if not self._waiting_instruction:
-            self._start_timer()
+        self._reset_timer()
+        self._timer_started = False
 
 
     def _numbers_complete(self) -> bool:
@@ -175,6 +179,7 @@ class ClockScreen(BaseScreen):
                 return
             self.phase = "hands"
             self.canvas.set_mode("hands")
+            self.canvas.set_hands(minute_angle=270.0, hour_angle=285.0)
             self.btn_erase.setEnabled(False)
             self.btn_undo.setEnabled(False)
             self._apply_language_texts()
@@ -210,13 +215,23 @@ class ClockScreen(BaseScreen):
         self.btn_erase.setText(self.tr("رسم", "Draw") if enabled else self.tr("پاک‌کن", "Erase"))
 
     def _start_timer(self) -> None:
-        self._time_left = 3 * 60
+        if self._timer.isActive():
+            return
+        if self._time_left <= 0:
+            self._time_left = 3 * 60
         self._update_timer_label()
         self._timer.start()
+        self._timer_started = True
 
     def _stop_timer(self) -> None:
         if self._timer.isActive():
             self._timer.stop()
+
+
+    def _reset_timer(self) -> None:
+        self._stop_timer()
+        self._time_left = 3 * 60
+        self._update_timer_label()
 
 
     def _on_timer_tick(self) -> None:
@@ -252,6 +267,8 @@ class ClockScreen(BaseScreen):
         self.btn_undo.setEnabled(True)
         self._apply_language_texts()
         self.result_label.setText("")
+        self._reset_timer()
+        self._timer_started = False
 
     def _apply_language_texts(self) -> None:
         fa = self.ctx.config.language == "fa"
@@ -263,8 +280,6 @@ class ClockScreen(BaseScreen):
             self.btn_next.setText("پایان" if self.phase == "hands" else "بعدی")
         else:
             self.btn_next.setText("Finish" if self.phase == "hands" else "Next")
-        self.btn_eval.setText("ارزیابی" if fa else "Evaluate")
-        self.btn_clear.setText("پاک کردن" if fa else "Clear")
         self.btn_back.setText("بازگشت" if fa else "Back")
         if fa:
             numbers_text = "حالا یک ساعت برایم بکش. اول همهٔ اعداد را در جای درستشان قرار بده."
@@ -277,7 +292,48 @@ class ClockScreen(BaseScreen):
             hands_text = "Now, set the hands to 10 past 11."
 
         instruction_text = numbers_text if self.phase == "numbers" else hands_text
-        self.set_instruction_status_text(instruction_text)
+        heading = "ترسیم ساعت" if fa else "Clock Drawing"
+        header_html = (
+            f"<div style='font-size:20px; font-weight:600; text-align:center;'>{heading}</div>"
+        )
+        body_html = f"<div style='margin-top:6px; text-align:center;'>{instruction_text}</div>"
+        self.set_instruction_status_text(header_html + body_html)
+        self._sync_header_side_widths()
+
+    def eventFilter(self, obj, event) -> bool:
+        if event.type() == QEvent.MouseButtonPress:
+            if not self._timer_started:
+                self._start_timer()
+        return super().eventFilter(obj, event)
+
+    def _install_timer_start_filters(self) -> None:
+        targets = [
+            self,
+            self.header_widget,
+            self._left_header,
+            self._right_header,
+            self.timer_label,
+            self.btn_back,
+            self.btn_undo,
+            self.btn_erase,
+            self.btn_next,
+            self.result_label,
+            self.canvas,
+            self.canvas.viewport(),
+        ]
+        for widget in targets:
+            widget.installEventFilter(self)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._sync_header_side_widths()
+
+    def _sync_header_side_widths(self) -> None:
+        left_width = self._left_header.sizeHint().width()
+        right_width = self._right_header.sizeHint().width()
+        width = max(left_width, right_width)
+        self._left_header.setFixedWidth(width)
+        self._right_header.setFixedWidth(width)
 
     def _on_instruction_finished(self, key: str) -> None:
         if key != self.instruction_key:

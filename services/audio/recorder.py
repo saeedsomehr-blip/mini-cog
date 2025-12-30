@@ -23,6 +23,12 @@ class AudioRecorder(QObject):
         elif hasattr(QMediaFormat.AudioCodec, "LinearPcm"):
             fmt.setAudioCodec(QMediaFormat.AudioCodec.LinearPcm)
         self._recorder.setMediaFormat(fmt)
+        if hasattr(self._recorder, "setAudioSampleRate"):
+            self._recorder.setAudioSampleRate(16000)
+        if hasattr(self._recorder, "setAudioChannelCount"):
+            self._recorder.setAudioChannelCount(1)
+        if hasattr(self._recorder, "setAudioBitRate"):
+            self._recorder.setAudioBitRate(16000 * 16)
 
         self._output_path: Path | None = None
 

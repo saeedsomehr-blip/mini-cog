@@ -11,7 +11,10 @@ from screens.base_screen import BaseScreen
 from domain.models import StepResult
 from domain.protocol import StepID
 from services.audio.recorder import AudioRecorder
-from services.stt.whisper_service import WhisperService
+from services.audio.recording_ready import wait_for_wav_ready
+from services.audio.speech_splitter import prepare_speech_chunks
+from services.stt.base import STTService
+from services.stt.confidence import decision_from_confidence
 from services.stt.matcher import match_words, MatchResult
 
 logger = logging.getLogger(__name__)
@@ -21,7 +24,7 @@ class RecallTranscriptionWorker(QObject):
     finished = Signal(object)
     error = Signal(str)
 
-    def __init__(self, stt: WhisperService, audio_path: Path, words: list[str], language: str):
+    def __init__(self, stt: STTService, audio_path: Path, words: list[str], language: str):
         super().__init__()
         self._stt = stt
         self._audio_path = audio_path
@@ -30,9 +33,39 @@ class RecallTranscriptionWorker(QObject):
 
     def run(self) -> None:
         try:
-            result = self._stt.transcribe(self._audio_path, language=self._language)
-            match = match_words(result.text, self._words)
-            self.finished.emit(match)
+            chunks = prepare_speech_chunks(self._audio_path)
+            texts = []
+            lang = self._language.lower()
+            is_fa = lang.startswith("fa")
+            use_grammar = is_fa or lang.startswith("en")
+            grammar_words = [w.lower() for w in self._words] if use_grammar else None
+            beam_size = 7 if is_fa else 1
+            word_confidences = []
+            for chunk in chunks:
+                result = self._stt.transcribe(
+                    chunk,
+                    language=self._language,
+                    beam_size=beam_size,
+                    vad_filter=True,
+                    without_timestamps=True,
+                    grammar=grammar_words,
+                )
+                if result.text:
+                    texts.append(result.text)
+                if result.word_confidences:
+                    word_confidences.extend(result.word_confidences)
+            combined = " ".join(texts).strip()
+            match = match_words(combined, self._words)
+            confidence = None
+            if word_confidences:
+                confidence = sum(item["conf"] for item in word_confidences) / len(word_confidences)
+            self.finished.emit(
+                {
+                    "match": match,
+                    "confidence": confidence,
+                    "word_confidences": word_confidences or None,
+                }
+            )
         except Exception as exc:
             self.error.emit(str(exc))
 
@@ -105,7 +138,7 @@ class RecallScreen(BaseScreen):
 
         self._is_recording = False
         self._recorder = AudioRecorder(self)
-        self._stt: WhisperService | None = None
+        self._stt: STTService | None = None
         self._thread: QThread | None = None
         self._worker: RecallTranscriptionWorker | None = None
         self._recording_path: Path | None = None
@@ -187,6 +220,7 @@ class RecallScreen(BaseScreen):
             if was_recording:
                 path = self._recorder.stop()
                 if path is not None and path.exists():
+                    wait_for_wav_ready(path)
                     self.record_status.setText(self._transcribing_text)
                     self.record_button.setEnabled(False)
                     self._start_transcription(path)
@@ -215,13 +249,20 @@ class RecallScreen(BaseScreen):
         self._worker.error.connect(self._thread.quit)
         self._thread.start()
 
-    def _on_transcription_done(self, match: MatchResult) -> None:
+    def _on_transcription_done(self, result: dict) -> None:
+        match = result["match"]
+        confidence = result.get("confidence")
+        word_confidences = result.get("word_confidences")
+        decision = decision_from_confidence(confidence)
         attempt = {
             "audio_path": str(self._recording_path) if self._recording_path else None,
             "transcript": match.transcript,
             "matched": match.matched,
             "missed": match.missed,
             "score": match.score,
+            "stt_confidence": confidence,
+            "stt_decision": decision,
+            "stt_word_confidences": word_confidences,
         }
         self._attempts.append(attempt)
 
@@ -231,6 +272,15 @@ class RecallScreen(BaseScreen):
             match.matched,
             match.missed,
             match.score,
+        )
+        logger.info(
+            "STT confidence: %s",
+            {
+                "audio": str(self._recording_path) if self._recording_path else None,
+                "hypothesis": match.transcript,
+                "confidence": confidence,
+                "decision": decision,
+            },
         )
 
         matched_text = "، ".join(match.matched) if match.matched else "-"
@@ -246,6 +296,37 @@ class RecallScreen(BaseScreen):
         self._sync_action_state()
 
     def _on_transcription_error(self, message: str) -> None:
+        if "Vosk model not found" in message or "Vosk is not installed" in message:
+            if "Vosk is not installed" in message:
+                text = (
+                    "کتابخانه Vosk نصب نیست. در حال نصب..."
+                    if self.ctx.config.language == "fa"
+                    else "Vosk library is not installed. Installing..."
+                )
+                installer = getattr(self.ctx, "request_vosk_install", None)
+                if callable(installer):
+                    installer()
+            else:
+                from services.stt.service_factory import get_vosk_model_path
+
+                model_path = get_vosk_model_path(self.ctx.config.language, self.ctx.paths.cache_dir)
+                text = (
+                    f"مدل Vosk پیدا نشد. مسیر: {model_path}"
+                    if self.ctx.config.language == "fa"
+                    else f"Vosk model not found. Path: {model_path}"
+                )
+            self.record_status.setText(text)
+            self.record_button.setEnabled(True)
+            return
+        if "local_files_only=False" in message or "Offline mode is enabled" in message:
+            downloader = getattr(self.ctx, "request_stt_download", None)
+            if callable(downloader):
+                downloader(self.ctx.config.language)
+            self.record_status.setText(
+                "در حال دانلود مدل گفتار..." if self.ctx.config.language == "fa" else "Downloading speech model..."
+            )
+            self.record_button.setEnabled(True)
+            return
         if self.ctx.config.language == "fa":
             self.record_status.setText(f"خطا در تبدیل گفتار: {message}")
         else:
@@ -286,6 +367,11 @@ class RecallScreen(BaseScreen):
         session = self._ensure_session()
         if session.words_presented:
             return list(session.words_presented)
+        result = session.get_result(StepID.REGISTRATION)
+        if result and result.payload:
+            words = result.payload.get("words_presented")
+            if words:
+                return list(words)
         return []
 
     def _sync_action_state(self) -> None:

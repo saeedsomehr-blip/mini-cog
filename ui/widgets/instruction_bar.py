@@ -10,6 +10,8 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSizePolicy,
     QVBoxLayout,
+    QProgressBar,
+    QMenu,
 )
 
 from app.paths import AppPaths
@@ -37,23 +39,19 @@ class InstructionBar(QWidget):
 
         self.lang_button = QPushButton("")
         self.lang_button.setFixedSize(56, 32)
-        self.lang_button.clicked.connect(self._toggle_language)
+        self.lang_button.clicked.connect(self._show_language_menu)
 
         self.btn_repeat = QPushButton("")
         self.btn_repeat.clicked.connect(self._on_play_clicked)
-
-        self.btn_play = QPushButton("")
-        self.btn_play.clicked.connect(self._on_play_clicked)
-
-        self.btn_stop = QPushButton("")
-        self.btn_stop.clicked.connect(self._on_stop_clicked)
+        self.btn_toggle = QPushButton("")
+        self.btn_toggle.clicked.connect(self._on_toggle_clicked)
+        self._is_speaking = False
 
         controls_row = QHBoxLayout()
         controls_row.setSpacing(6)
         controls_row.setContentsMargins(0, 0, 0, 0)
         controls_row.addWidget(self.btn_repeat)
-        controls_row.addWidget(self.btn_play)
-        controls_row.addWidget(self.btn_stop)
+        controls_row.addWidget(self.btn_toggle)
 
         controls_col = QVBoxLayout()
         controls_col.setSpacing(6)
@@ -67,14 +65,27 @@ class InstructionBar(QWidget):
         self.title.setAlignment(Qt.AlignCenter)
         self.title.setStyleSheet("font-size: 16px;")
 
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 100)
+        self.progress.setValue(0)
+        self.progress.setTextVisible(False)
+        self.progress.setVisible(False)
+
+        text_col = QVBoxLayout()
+        text_col.setSpacing(4)
+        text_col.setContentsMargins(0, 0, 0, 0)
+        text_col.addWidget(self.title)
+        text_col.addWidget(self.progress)
+
         layout = QHBoxLayout(self)
         layout.setContentsMargins(12, 6, 12, 6)
         layout.setSpacing(12)
         layout.addWidget(self.lang_button)
         layout.addLayout(controls_col)
-        layout.addWidget(self.title, stretch=1)
+        layout.addLayout(text_col, stretch=1)
 
         self._instructions.speakingChanged.connect(self.avatar.set_speaking)
+        self._instructions.speakingChanged.connect(self._on_speaking_changed)
         self.avatar.clicked.connect(self._on_play_clicked)
         self._instructions.started.connect(lambda k: self._refresh_status())
         self._instructions.finished.connect(lambda k: self._refresh_status())
@@ -105,9 +116,8 @@ class InstructionBar(QWidget):
         fa = language == "fa"
         self.lang_button.setText("FA" if fa else "EN")
         self.lang_button.setStyleSheet("")
-        self.btn_repeat.setText("تکرار" if fa else "Repeat")
-        self.btn_play.setText("پخش" if fa else "Play")
-        self.btn_stop.setText("توقف" if fa else "Stop")
+        self.btn_repeat.setText("\u062a\u06a9\u0631\u0627\u0631" if fa else "Repeat")
+        self._toggle_play_stop_text()
         if self._instruction_display_text:
             self._set_status(self._instruction_display_text)
         elif self._current_key:
@@ -115,9 +125,41 @@ class InstructionBar(QWidget):
         else:
             self._set_status(self._fmt("آماده", "Ready", ""))
 
-    def _toggle_language(self) -> None:
-        new_lang = "en" if self._language == "fa" else "fa"
-        self.set_language(new_lang)
+    def _show_language_menu(self) -> None:
+        menu = QMenu(self)
+        menu.setStyleSheet(
+            "QMenu {"
+            "  background: #2f6fed;"
+            "  color: white;"
+            "  border: none;"
+            "}"
+            "QMenu::item {"
+            "  padding: 8px 18px;"
+            "  font-size: 14px;"
+            "}"
+            "QMenu::item:selected {"
+            "  background: #255fda;"
+            "}"
+            "QMenu::item:checked {"
+            "  font-weight: 600;"
+            "}"
+        )
+        action_fa = menu.addAction("فارسی")
+        action_en = menu.addAction("انگلیسی")
+        action_fa.setCheckable(True)
+        action_en.setCheckable(True)
+        action_fa.setChecked(self._language == "fa")
+        action_en.setChecked(self._language == "en")
+        selected = menu.exec(self.lang_button.mapToGlobal(self.lang_button.rect().bottomLeft()))
+        if selected is action_fa:
+            self._select_language("fa")
+        elif selected is action_en:
+            self._select_language("en")
+
+    def _select_language(self, language: str) -> None:
+        if language == self._language:
+            return
+        self.set_language(language)
 
     def _refresh_status(self) -> None:
         if self._instruction_display_text:
@@ -129,8 +171,11 @@ class InstructionBar(QWidget):
         if self._current_key:
             self._instructions.play(self._current_key)
 
-    def _on_stop_clicked(self) -> None:
-        self._instructions.stop()
+    def _on_toggle_clicked(self) -> None:
+        if self._is_speaking:
+            self._instructions.stop()
+        else:
+            self._on_play_clicked()
 
     def _set_status(self, text: str) -> None:
         self.title.setText(text)
@@ -142,3 +187,22 @@ class InstructionBar(QWidget):
 
     def set_language_controls_visible(self, visible: bool) -> None:
         self.lang_button.setVisible(visible)
+
+    def set_progress_visible(self, visible: bool) -> None:
+        self.progress.setVisible(visible)
+        if not visible:
+            self.progress.setValue(0)
+
+    def set_progress_value(self, value: int) -> None:
+        self.progress.setValue(value)
+
+    def _on_speaking_changed(self, speaking: bool) -> None:
+        self._is_speaking = speaking
+        self._toggle_play_stop_text()
+
+    def _toggle_play_stop_text(self) -> None:
+        fa = self._language == "fa"
+        if self._is_speaking:
+            self.btn_toggle.setText("\u062a\u0648\u0642\u0641" if fa else "Stop")
+        else:
+            self.btn_toggle.setText("\u067e\u062e\u0634" if fa else "Play")

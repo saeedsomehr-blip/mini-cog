@@ -1,18 +1,82 @@
-mini_cog_app/
+minicog/
   app/
-    __init__.py
-    main.py
     bootstrap.py
     config.py
-    paths.py
+    controller.py
     logging_conf.py
+    main.py
+    paths.py
+  asset/
+    audio/
+      manifest.json
+      fa/
+        clock_instruction.wav
+        reg-instruction.wav
+        ???? 1.wav
+        ???? 2.wav
+        ???? 3.wav
+        ???? 4.wav
+        ???? 5.wav
+        ???? 6.wav
+    avatar/
+      doctor_closed.png
+      doctor_open.png
+  domain/
+    models.py
+    protocol.py
+    word_lists.py
+  scoring/
+    __init__.py
+    clock_hands_eval.py
+    clock_numbers_eval.py
+  screens/
+    __init__.py
+    base_screen.py
+    basic_info_screen.py
+    clock_screen.py
+    home_screen.py
+    recall_screen.py
+    registration_screen.py
+    results_screen.py
+  services/
+    __init__.py
+    audio/
+      __init__.py
+      instruction_player.py
+      manifest.py
+      mouth_animator.py
+      recorder.py
+      recording_ready.py
+      speech_splitter.py
+    instructions/
+      __init__.py
+      instruction_player.py
+      service.py
+    stt/
+      base.py
+      confidence.py
+      device_selector.py
+      matcher.py
+      service_factory.py
+      types.py
+      vosk_service.py
+      whisper_service.py
+    exporter.py
   ui/
     __init__.py
+    animations.py
+    i18n.py
     main_window.py
     router.py
+    styles.py
     theme.py
-    i18n.py
-    screens/
+    widgets/
       __init__.py
-      base_screen.py
-      home_screen.py
+      avatar_widget.py
+      clock_canvas.py
+      instruction_bar.py
+  LICENSE
+  mini-cog.pdf
+  structure.txt
+  vosk-model-small-en-us-0.15.zip
+  vosk-model-small-fa-0.4.zip

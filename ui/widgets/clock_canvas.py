@@ -79,12 +79,18 @@ class ClockCanvas(QGraphicsView):
         self.setRenderHints(self.renderHints())
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setMouseTracking(True)
+        self.viewport().setMouseTracking(True)
 
         # Editor state
         self._active_editor: Optional[QLineEdit] = None
         self._active_proxy: Optional[QGraphicsProxyWidget] = None
         self._active_click_pos: Optional[QPointF] = None
         self._committed: bool = False
+        self._drag_number: Optional[int] = None
+        self._drag_prev_center: Optional[QPointF] = None
+        self._drag_prev_index: Optional[int] = None
+        self._drag_moved: bool = False
 
         # Placed numbers (unique by value). Re-entering a number moves it.
         self._placed: Dict[int, PlacedNumberItem] = {}
@@ -97,6 +103,7 @@ class ClockCanvas(QGraphicsView):
         self._hour_angle: Optional[float] = None
         self._minute_item: Optional[QGraphicsLineItem] = None
         self._hour_item: Optional[QGraphicsLineItem] = None
+        self._drag_hand: Optional[str] = None
 
         # Fit the logical scene in the view
         self._scene.setSceneRect(-260, -260, 520, 520)
@@ -109,7 +116,14 @@ class ClockCanvas(QGraphicsView):
     def mousePressEvent(self, event) -> None:
         if self._mode == "hands" and event.button() == Qt.LeftButton:
             scene_pos = self.mapToScene(event.pos())
-            self._set_hand_at(scene_pos)
+            if self._drag_hand is not None:
+                self._drag_hand = None
+                return
+            target = self._find_hand_at(scene_pos)
+            if target is None:
+                return
+            self._drag_hand = target
+            self._set_hand_angle(target, scene_pos)
             return
 
         if self._erase_mode and self._mode == "numbers" and event.button() == Qt.LeftButton:
@@ -118,6 +132,16 @@ class ClockCanvas(QGraphicsView):
             if number is not None:
                 self._remove_number(number, record=True)
             return
+
+        if self._mode == "numbers" and not self._erase_mode and event.button() == Qt.LeftButton:
+            scene_pos = self.mapToScene(event.pos())
+            number = self._find_number_at(scene_pos)
+            if number is not None:
+                if self._active_editor is not None:
+                    self._commit_active_editor()
+                self._start_drag(number)
+                self._update_drag(scene_pos)
+                return
 
         # If an editor is active, allow quick reposition and continue entry
         if self._active_editor is not None:
@@ -143,6 +167,58 @@ class ClockCanvas(QGraphicsView):
 
         super().mousePressEvent(event)
 
+    def mouseMoveEvent(self, event) -> None:
+        if self._drag_hand is not None:
+            scene_pos = self.mapToScene(event.pos())
+            self._set_hand_angle(self._drag_hand, scene_pos)
+            return
+        if self._drag_number is not None:
+            scene_pos = self.mapToScene(event.pos())
+            self._update_drag(scene_pos)
+            self._drag_moved = True
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:
+        if self._drag_number is not None and event.button() == Qt.LeftButton:
+            self._finish_drag()
+            return
+        super().mouseReleaseEvent(event)
+
+    def _start_drag(self, number: int) -> None:
+        self._drag_number = number
+        self._drag_prev_center = self._placed[number].center if number in self._placed else None
+        self._drag_prev_index = self._order.index(number) if number in self._order else None
+        self._drag_moved = False
+
+    def _update_drag(self, scene_pos: QPointF) -> None:
+        if self._drag_number is None:
+            return
+        placed = self._placed.get(self._drag_number)
+        if placed is None:
+            return
+        self._set_item_center(placed.text_item, scene_pos)
+        placed.center = scene_pos
+
+    def _finish_drag(self) -> None:
+        number = self._drag_number
+        prev_center = self._drag_prev_center
+        prev_index = self._drag_prev_index
+        moved = self._drag_moved
+        self._drag_number = None
+        self._drag_prev_center = None
+        self._drag_prev_index = None
+        self._drag_moved = False
+        if not moved or number is None:
+            return
+        self._history.append(
+            HistoryAction(
+                action="place",
+                number=number,
+                prev_center=prev_center,
+                prev_index=prev_index,
+            )
+        )
     def open_editor_at(self, scene_pos: QPointF) -> None:
         # Create an inline editor at the exact clicked position
         if self._active_editor is not None or self._erase_mode or self._mode != "numbers":
@@ -344,6 +420,13 @@ class ClockCanvas(QGraphicsView):
     def get_hand_angles(self) -> Tuple[Optional[float], Optional[float]]:
         return self._minute_angle, self._hour_angle
 
+    def set_hands(self, minute_angle: float, hour_angle: float) -> None:
+        self._minute_angle = minute_angle % 360
+        self._hour_angle = hour_angle % 360
+        self._minute_item = self._draw_hand(self._minute_angle, length_ratio=0.85, width=3, item=self._minute_item)
+        self._hour_item = self._draw_hand(self._hour_angle, length_ratio=0.6, width=5, item=self._hour_item)
+        self._hand_target = "minute"
+
     def _set_hand_at(self, scene_pos: QPointF) -> None:
         dx = scene_pos.x() - self._center.x()
         dy = scene_pos.y() - self._center.y()
@@ -359,6 +442,48 @@ class ClockCanvas(QGraphicsView):
             self._hour_angle = angle
             self._hour_item = self._draw_hand(angle, length_ratio=0.6, width=5, item=self._hour_item)
             self._hand_target = "minute"
+
+    def _set_hand_angle(self, target: str, scene_pos: QPointF) -> None:
+        dx = scene_pos.x() - self._center.x()
+        dy = scene_pos.y() - self._center.y()
+        if dx == 0 and dy == 0:
+            return
+        angle = math.degrees(math.atan2(-dy, dx)) % 360
+        if target == "minute":
+            self._minute_angle = angle
+            self._minute_item = self._draw_hand(angle, length_ratio=0.85, width=3, item=self._minute_item)
+        elif target == "hour":
+            self._hour_angle = angle
+            self._hour_item = self._draw_hand(angle, length_ratio=0.6, width=5, item=self._hour_item)
+
+    def _find_hand_at(self, scene_pos: QPointF) -> Optional[str]:
+        threshold = 10.0
+        if self._minute_item is not None:
+            if self._distance_to_line(scene_pos, self._minute_item.line()) <= threshold:
+                return "minute"
+        if self._hour_item is not None:
+            if self._distance_to_line(scene_pos, self._hour_item.line()) <= threshold:
+                return "hour"
+        return None
+
+    def _distance_to_line(self, point: QPointF, line) -> float:
+        ax = line.x1()
+        ay = line.y1()
+        bx = line.x2()
+        by = line.y2()
+        px = point.x()
+        py = point.y()
+        abx = bx - ax
+        aby = by - ay
+        apx = px - ax
+        apy = py - ay
+        ab_len_sq = abx * abx + aby * aby
+        if ab_len_sq == 0:
+            return math.hypot(px - ax, py - ay)
+        t = max(0.0, min(1.0, (apx * abx + apy * aby) / ab_len_sq))
+        closest_x = ax + abx * t
+        closest_y = ay + aby * t
+        return math.hypot(px - closest_x, py - closest_y)
 
     def _draw_hand(
         self,

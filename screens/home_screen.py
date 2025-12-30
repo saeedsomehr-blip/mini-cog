@@ -16,6 +16,7 @@ class HomeScreen(BaseScreen):
         self.title.setWordWrap(True)
         self.title.setStyleSheet("font-size: 20px; font-weight: 600;")
         layout.addWidget(self.title)
+        self.title.setVisible(False)
 
         self.btn_start = QPushButton("")
         self.btn_start.clicked.connect(self._start)
@@ -42,7 +43,12 @@ class HomeScreen(BaseScreen):
         )
         self.title.setText("مینی کاگ" if fa else "Mini-Cog")
         self.btn_start.setText("شروع" if fa else "Start")
-        self.set_instruction_status_text(description)
+        heading = "مینی کاگ" if fa else "Mini-Cog"
+        header_html = (
+            f"<div style='font-size:20px; font-weight:600; text-align:center;'>{heading}</div>"
+        )
+        body_html = f"<div style='margin-top:6px; text-align:center;'>{description}</div>"
+        self.set_instruction_status_text(header_html + body_html)
 
     def _start(self) -> None:
         self.ctx.controller.start_new_session(language=self.ctx.config.language)

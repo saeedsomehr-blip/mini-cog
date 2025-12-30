@@ -17,7 +17,7 @@ def build_stylesheet(rtl: bool = False) -> str:
         "danger": "#d64545",
     }
 
-    line_edit_alignment = "AlignRight" if rtl else "AlignLeft"
+    line_edit_alignment = "AlignLeading"
     return f"""
     /* Base */
     QWidget {{

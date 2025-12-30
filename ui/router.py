@@ -56,6 +56,13 @@ class Router:
         if self._instruction_bar is not None:
             self._instruction_bar.set_instruction_text(text or "")
 
+    def set_instruction_progress(self, visible: bool, value: int | None = None) -> None:
+        if self._instruction_bar is None:
+            return
+        self._instruction_bar.set_progress_visible(visible)
+        if value is not None:
+            self._instruction_bar.set_progress_value(value)
+
     def notify_language_changed(self, language: str) -> None:
         for screen in self._routes.values():
             handler = getattr(screen, "on_language_changed", None)
